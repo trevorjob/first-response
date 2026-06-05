@@ -1,10 +1,5 @@
 [phases.setup]
-nixPkgs = ["python312", "nodejs_22"]
-
-[phases.build]
-cmds = [
-  "cd frontend/dashboard && npm install && npm run build"
-]
+nixPkgs = ["python312"]
 
 [start]
 cmd = "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT"
