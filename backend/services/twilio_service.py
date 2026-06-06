@@ -1,25 +1,28 @@
 import asyncio
+import logging
 import os
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
 
-# Single client instance — created once at import time
+logger = logging.getLogger(__name__)
+
 _client = Client(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
 _from_number = os.environ["TWILIO_PHONE_NUMBER"]
 
 
 def _send_sms_sync(to: str, body: str) -> str:
     msg = _client.messages.create(body=body, from_=_from_number, to=to)
+    logger.info("SMS sent to=%s sid=%s status=%s", to, msg.sid, msg.status)
+    if msg.error_code:
+        logger.error("SMS error to=%s code=%s message=%s", to, msg.error_code, msg.error_message)
     return msg.sid
 
 
 async def send_sms(to: str, body: str) -> str:
-    """Send one SMS without blocking the event loop. Returns message SID."""
     return await asyncio.to_thread(_send_sms_sync, to, body)
 
 
 async def send_sms_bulk(recipients: list[tuple[str, str]]) -> list[dict]:
-    """Send to multiple recipients concurrently. Each item is (phone, message)."""
     tasks = [asyncio.to_thread(_send_sms_sync, phone, msg) for phone, msg in recipients]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     return [
@@ -33,11 +36,13 @@ def _send_whatsapp_sync(to: str, body: str) -> str:
     whatsapp_from = f"whatsapp:{os.environ['TWILIO_WHATSAPP_NUMBER']}"
     whatsapp_to = f"whatsapp:{to}" if not to.startswith("whatsapp:") else to
     msg = _client.messages.create(body=body, from_=whatsapp_from, to=whatsapp_to)
+    logger.info("WhatsApp sent to=%s sid=%s status=%s", whatsapp_to, msg.sid, msg.status)
+    if msg.error_code:
+        logger.error("WhatsApp error to=%s code=%s message=%s", whatsapp_to, msg.error_code, msg.error_message)
     return msg.sid
 
 
 async def send_whatsapp(to: str, body: str) -> str:
-    """Send a WhatsApp message without blocking the event loop."""
     return await asyncio.to_thread(_send_whatsapp_sync, to, body)
 
 

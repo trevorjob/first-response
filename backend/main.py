@@ -1,5 +1,6 @@
 import os
 import logging
+logging.basicConfig(level=logging.INFO)
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
