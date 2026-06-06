@@ -79,8 +79,8 @@ async def dispatch_emergency(request: Request, db: Session = Depends(get_db)):
             .all()
         )
 
-    app_url = os.environ.get("APP_URL", "http://localhost:8000")
-    sms_batch = [(r.phone, build_responder_sms(incident, r, app_url)) for r in responders]
+    frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5173"))
+    sms_batch = [(r.phone, build_responder_sms(incident, r, frontend_url)) for r in responders]
     await send_sms_bulk(sms_batch)
 
     for r in responders:
@@ -89,7 +89,7 @@ async def dispatch_emergency(request: Request, db: Session = Depends(get_db)):
 
     incident_id_str = str(incident.id)
     task = asyncio.create_task(
-        _ping_loop(incident_id_str, [str(r.id) for r in responders], app_url)
+        _ping_loop(incident_id_str, [str(r.id) for r in responders], frontend_url)
     )
     _ping_tasks[incident_id_str] = task
 
