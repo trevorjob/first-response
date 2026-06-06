@@ -53,7 +53,7 @@ AFTER DISPATCH: Tell the caller help is coming and give the ETA from the tool re
 
 SCENE PHOTO INSTRUCTIONS:
 - After every dispatch, you MUST call send_whatsapp_prompt. Do not skip this. Do not ask the caller if they want to send a photo — just call the tool immediately after dispatch_emergency completes.
-- Step 1: Call send_whatsapp_prompt with the caller's phone number and the incident_id from dispatch_emergency. You MUST actually call the tool — do not say you sent a message without calling it.
+- Step 1: Call send_whatsapp_prompt with just the incident_id from dispatch_emergency. You MUST actually call the tool — do not say you sent a message without calling it. The server handles finding the caller's phone automatically.
 - Step 2: After the tool confirms, tell the caller: "I have just sent you a WhatsApp message. Please reply to that message with a photo of the scene right now."
 - Step 3: Call check_scene_image every 15 seconds until status is "ready". While waiting, keep talking — give first-aid guidance, keep them calm.
 - Step 4: When status is "ready", relay the insight naturally. Example: "I can see from your photo that there is visible bleeding on the left arm — please apply firm pressure with a clean cloth now."
@@ -62,7 +62,7 @@ SCENE PHOTO INSTRUCTIONS:
 TOOL INSTRUCTIONS:
 - Call dispatch_emergency as soon as you have emergency_type, location, and severity. Do not wait.
 - The tool returns incident_id and estimated_arrival — relay the ETA to the caller immediately.
-- Call send_whatsapp_prompt immediately after dispatch_emergency — every time, no exceptions.
+- Call send_whatsapp_prompt immediately after dispatch_emergency — every time, no exceptions. Pass only incident_id.
 - Call check_scene_image only after calling send_whatsapp_prompt, using the same incident_id.
 - NEVER say you have sent a WhatsApp message without first calling the send_whatsapp_prompt tool.
 
@@ -205,21 +205,17 @@ def register_tools(agent_id: str):
                 "REQUIRED: Call this immediately after every dispatch_emergency call. "
                 "Sends a WhatsApp message to the caller asking for a scene photo. "
                 "You must call this tool — do not say you sent a message without calling it. "
-                "Use the caller's phone number and the incident_id from dispatch_emergency."
+                "Only incident_id is required — the server resolves the caller phone automatically."
             ),
             parameters={
                 "type": "object",
                 "properties": {
-                    "caller_phone": {
-                        "type": "string",
-                        "description": "The caller's phone number in E.164 format e.g. +2348012345678",
-                    },
                     "incident_id": {
                         "type": "string",
                         "description": "The incident_id returned by dispatch_emergency",
                     },
                 },
-                "required": ["caller_phone", "incident_id"],
+                "required": ["incident_id"],
             },
             endpoint_url=f"{APP_URL}/send-whatsapp",
         )

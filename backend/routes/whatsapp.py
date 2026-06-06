@@ -24,30 +24,19 @@ WHATSAPP_PROMPT = (
 async def send_whatsapp_prompt(request: Request, db: Session = Depends(get_db)):
     """
     Agent tool: send the caller a WhatsApp message asking for a scene photo.
-    Aethex tool call body: { "arguments": { "caller_phone": "...", "incident_id": "..." }, ... }
+    Aethex tool call body: { "arguments": { "incident_id": "..." }, "call_id": "...", ... }
+    caller_phone is resolved from the incident or the Aethex call metadata.
     """
     raw = await request.body()
     payload = json.loads(raw) if raw else {}
     args = payload.get("arguments", payload)
 
-    caller_phone = args.get("caller_phone", "")
     incident_id = args.get("incident_id", "")
+    # Agent may still pass caller_phone — accept it as a fallback
+    caller_phone_arg = args.get("caller_phone", "").replace("whatsapp:", "").strip()
 
-    if not caller_phone:
-        return {"status": "error", "message": "caller_phone is required"}
-
-    # Normalise — strip 'whatsapp:' prefix if caller passed it
-    caller_phone = caller_phone.replace("whatsapp:", "")
-
-    try:
-        await send_whatsapp(caller_phone, WHATSAPP_PROMPT)
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Could not send WhatsApp message: {e}",
-        }
-
-    # Store caller_phone on the incident so incoming photo can be matched
+    # Resolve incident
+    incident = None
     if incident_id:
         try:
             uuid.UUID(incident_id)
@@ -59,9 +48,40 @@ async def send_whatsapp_prompt(request: Request, db: Session = Depends(get_db)):
                 .order_by(Incident.created_at.desc())
                 .first()
             )
-        if incident:
-            incident.caller_phone = incident.caller_phone or caller_phone
-            db.commit()
+
+    # Fallback: most recent active incident if no incident_id given
+    if not incident:
+        incident = (
+            db.query(Incident)
+            .filter(Incident.status.in_(["pending", "active"]))
+            .order_by(Incident.created_at.desc())
+            .first()
+        )
+
+    if not incident:
+        return {"status": "error", "message": "No active incident found"}
+
+    # Resolve phone: incident record → arg passed by agent → give up
+    caller_phone = (incident.caller_phone or caller_phone_arg or "").replace("whatsapp:", "").strip()
+
+    if not caller_phone:
+        return {
+            "status": "error",
+            "message": "No caller phone on record. Ask the caller for their number and try again.",
+        }
+
+    try:
+        await send_whatsapp(caller_phone, WHATSAPP_PROMPT)
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Could not send WhatsApp message: {e}",
+        }
+
+    # Persist caller_phone on incident for incoming photo matching
+    if not incident.caller_phone:
+        incident.caller_phone = caller_phone
+        db.commit()
 
     return {
         "status": "sent",
