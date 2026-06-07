@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 from fastapi import APIRouter, Depends, Request, HTTPException
 from sqlalchemy.orm import Session
@@ -10,10 +11,16 @@ from models.ping_log import PingLog
 from services.twilio_service import send_sms_bulk, build_responder_sms
 from voice import get_provider
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
-# incident_id -> asyncio Task for the 90s re-ping loop
 _ping_tasks: dict[str, asyncio.Task] = {}
+
+RESPONDER_TYPES: dict[str, list[str]] = {
+    "medical": ["ambulance", "first_aid"],
+    "fire":    ["fire"],
+}
 
 
 @router.post("/dispatch")
@@ -33,16 +40,10 @@ async def dispatch_emergency(request: Request, db: Session = Depends(get_db)):
     location = args.get("location", "")
     severity = args.get("severity", "moderate")
     details = args.get("details", "")
-    caller_phone = args.get("caller_phone", "")
 
     if not location:
         raise HTTPException(status_code=422, detail="location is required")
 
-    # Agent sends "medical" or "fire"; DB stores "ambulance", "fire", "first_aid"
-    RESPONDER_TYPES: dict[str, list[str]] = {
-        "medical": ["ambulance", "first_aid"],
-        "fire":    ["fire"],
-    }
     responder_types = RESPONDER_TYPES.get(emergency_type, [emergency_type])
 
     incident = Incident(
@@ -50,7 +51,6 @@ async def dispatch_emergency(request: Request, db: Session = Depends(get_db)):
         location_text=location,
         severity=severity,
         details=details,
-        caller_phone=caller_phone,
         conversation_id=tool_call.conversation_id,
         status="pending",
     )
@@ -58,9 +58,8 @@ async def dispatch_emergency(request: Request, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(incident)
 
-    zone_prefix = location.split(',')[0].strip()
+    zone_prefix = location.split(",")[0].strip()
 
-    # Zone match first, fall back to type-only
     responders = (
         db.query(Responder)
         .filter(
@@ -92,6 +91,8 @@ async def dispatch_emergency(request: Request, db: Session = Depends(get_db)):
         _ping_loop(incident_id_str, [str(r.id) for r in responders], frontend_url)
     )
     _ping_tasks[incident_id_str] = task
+
+    logger.info("Dispatched incident=%s type=%s responders=%d", incident_id_str[:8], emergency_type, len(responders))
 
     return provider.tool_response(
         incident_id=incident_id_str,
