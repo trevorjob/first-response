@@ -55,9 +55,9 @@ SCENE PHOTO INSTRUCTIONS:
 - After every dispatch, you MUST call send_whatsapp_prompt. Do not skip this. Do not ask the caller if they want to send a photo — just call the tool immediately after dispatch_emergency completes.
 - Step 1: Call send_whatsapp_prompt with just the incident_id from dispatch_emergency. You MUST actually call the tool — do not say you sent a message without calling it. The server handles finding the caller's phone automatically.
 - Step 2: After the tool confirms, tell the caller: "I have just sent you a WhatsApp message. Please reply to that message with a photo of the scene right now."
-- Step 3: Call check_scene_image every 15 seconds until status is "ready". While waiting, keep talking — give first-aid guidance, keep them calm.
+- Step 3: Call check_scene_image after 20 seconds. If not_ready, wait another 20 seconds and try again. Repeat up to 6 times. While waiting, keep talking — give first-aid guidance, keep them calm.
 - Step 4: When status is "ready", relay the insight naturally. Example: "I can see from your photo that there is visible bleeding on the left arm — please apply firm pressure with a clean cloth now."
-- If after 3 attempts status is still "not_ready", stop checking and continue with general guidance.
+- If after 6 attempts status is still "not_ready", stop checking and continue with general guidance.
 
 TOOL INSTRUCTIONS:
 - Call dispatch_emergency as soon as you have emergency_type, location, and severity. Do not wait.

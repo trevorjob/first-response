@@ -4,11 +4,10 @@ import json
 import logging
 import os
 import uuid
-from fastapi import APIRouter, Request, Depends, HTTPException
+from fastapi import APIRouter, Request, Depends
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import cast, Text
 from sqlalchemy.orm import Session
-from twilio.request_validator import RequestValidator
 from database import get_db
 from models.incident import Incident
 from services.twilio_service import send_whatsapp
@@ -31,7 +30,6 @@ async def send_whatsapp_prompt(request: Request, db: Session = Depends(get_db)):
     args = payload.get("arguments", payload)
     incident_id = args.get("incident_id", "")
 
-    # Resolve incident by full UUID or 8-char prefix
     incident = None
     if incident_id:
         try:
@@ -45,7 +43,6 @@ async def send_whatsapp_prompt(request: Request, db: Session = Depends(get_db)):
                 .first()
             )
 
-    # Fallback: most recent active incident
     if not incident:
         incident = (
             db.query(Incident)
@@ -57,7 +54,6 @@ async def send_whatsapp_prompt(request: Request, db: Session = Depends(get_db)):
     if not incident:
         return {"status": "error", "message": "No active incident found"}
 
-    # Always send to the configured test number
     to_number = os.environ.get("TEST_WHATSAPP_NUMBER", "+2348104899622")
 
     try:
@@ -67,7 +63,6 @@ async def send_whatsapp_prompt(request: Request, db: Session = Depends(get_db)):
         logger.error("WhatsApp send failed: %s", e)
         return {"status": "error", "message": f"Could not send WhatsApp message: {e}"}
 
-    # Store number on incident so incoming photo can be matched
     if not incident.caller_phone:
         incident.caller_phone = to_number
         db.commit()
@@ -81,14 +76,6 @@ async def send_whatsapp_prompt(request: Request, db: Session = Depends(get_db)):
 @router.post("/whatsapp/incoming", response_class=PlainTextResponse)
 async def whatsapp_incoming(request: Request, db: Session = Depends(get_db)):
     form = dict(await request.form())
-
-    auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
-    is_production = "railway.app" in os.environ.get("APP_URL", "")
-    if is_production and auth_token:
-        sig = request.headers.get("X-Twilio-Signature", "")
-        validator = RequestValidator(auth_token)
-        if not validator.validate(str(request.url), form, sig):
-            raise HTTPException(status_code=403, detail="Invalid Twilio signature")
 
     media_url = form.get("MediaUrl0", "")
     num_media = int(form.get("NumMedia", "0"))
@@ -115,22 +102,26 @@ async def whatsapp_incoming(request: Request, db: Session = Depends(get_db)):
         )
 
     if not incident:
+        logger.warning("WhatsApp photo received but no active incident found (from=%s)", from_number)
         return ""
 
-    asyncio.create_task(_analyze_and_store(str(incident.id), media_url, auth_token))
+    logger.info("WhatsApp photo received from %s, analysing for incident %s", from_number, str(incident.id)[:8])
+    asyncio.create_task(_analyze_and_store(str(incident.id), media_url))
     return ""
 
 
-async def _analyze_and_store(incident_id: str, media_url: str, twilio_auth_token: str):
+async def _analyze_and_store(incident_id: str, media_url: str):
     from database import SessionLocal
     import httpx
 
+    account_sid = os.environ.get("TWILIO_ACCOUNT_SID", "")
+    auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
+
     try:
-        account_sid = os.environ.get("TWILIO_ACCOUNT_SID", "")
         async with httpx.AsyncClient() as http:
             resp = await http.get(
                 media_url,
-                auth=(account_sid, twilio_auth_token),
+                auth=(account_sid, auth_token),
                 follow_redirects=True,
                 timeout=15,
             )
