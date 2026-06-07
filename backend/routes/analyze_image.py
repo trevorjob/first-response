@@ -69,11 +69,10 @@ async def check_scene_image(request: Request, db: Session = Depends(get_db)):
     if incident.image_insight:
         return {
             "status": "ready",
-            "insight": incident.image_insight,
-            "message": incident.image_insight,
+            "message": f"Scene analysis complete. Read this to the caller now: {incident.image_insight}",
         }
 
     return {
         "status": "not_ready",
-        "message": "Photo not received yet. Please ask the caller to send the photo now, then check again in 15 seconds.",
+        "message": "Photo not received yet. Wait 20 seconds and call this tool again.",
     }

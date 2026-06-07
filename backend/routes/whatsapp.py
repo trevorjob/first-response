@@ -119,12 +119,17 @@ async def _analyze_and_store(incident_id: str, media_url: str):
 
     try:
         async with httpx.AsyncClient() as http:
-            resp = await http.get(
+            # Step 1: get the redirect URL using Twilio auth
+            head = await http.get(
                 media_url,
                 auth=(account_sid, auth_token),
-                follow_redirects=True,
-                timeout=15,
+                follow_redirects=False,
+                timeout=10,
             )
+            cdn_url = head.headers.get("location", media_url)
+
+            # Step 2: fetch the actual image from CDN without auth
+            resp = await http.get(cdn_url, follow_redirects=True, timeout=15)
             resp.raise_for_status()
             image_b64 = base64.b64encode(resp.content).decode("utf-8")
             content_type = resp.headers.get("content-type", "image/jpeg").split(";")[0]
